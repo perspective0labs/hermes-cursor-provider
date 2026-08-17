@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+.cursor_auth.json
+proxy_server.log
+.proxy_start.lock
+.DS_Store

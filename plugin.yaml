@@ -1,0 +1,6 @@
+name: cursor
+kind: model-provider
+version: 1.0.0
+description: Cursor subscription via Cursor's native Agent API (local proxy)
+author: Chris (salvaged from NousResearch/hermes-agent PR #40876 by themirzaalibaig)
+homepage: https://github.com/NousResearch/hermes-agent/pull/40876
