@@ -151,7 +151,7 @@ class CursorProfile(ProviderProfile):
         *,
         api_key: str | None = None,
         base_url: str | None = None,
-        timeout: float = 8.0,
+        timeout: float = 30.0,
     ) -> list[str] | None:
         _ensure_proxy_running(DEFAULT_PORT)
         return super().fetch_models(api_key=api_key, base_url=base_url, timeout=timeout)

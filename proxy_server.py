@@ -41,6 +41,13 @@ from fastapi.responses import JSONResponse, StreamingResponse  # noqa: E402
 
 logger = logging.getLogger("cursor_plugin.proxy")
 
+# Live GetUsableModels takes ~13s cold (h2 round-trip to api2.cursor.sh),
+# while Hermes' fetch_models default timeout is 8s -- so without a cache the
+# first /v1/models call times out on the client side and Hermes falls back
+# to the profile's 2 fallback models. Cache the catalog with a TTL instead.
+_MODEL_CACHE_TTL_S = 1800.0  # 30 minutes
+_model_cache: dict[str, Any] = {"ts": 0.0, "models": None}
+
 DEFAULT_PORT = int(os.getenv("CURSOR_PROXY_PORT", "8765"))
 DEFAULT_HOST = "127.0.0.1"
 
@@ -92,9 +99,13 @@ def create_app():
             token = _resolve_token()
         except Exception as exc:
             return JSONResponse({"error": str(exc)}, status_code=401)
-        models = fetch_cursor_usable_models(api_key=token, base_url=CURSOR_API_URL) or [
-            "composer-2.5"
-        ]
+        now = time.time()
+        if _model_cache["models"] is None or now - _model_cache["ts"] > _MODEL_CACHE_TTL_S:
+            models = fetch_cursor_usable_models(api_key=token, base_url=CURSOR_API_URL)
+            if models:
+                _model_cache["models"] = models
+                _model_cache["ts"] = now
+        models = _model_cache["models"] or ["composer-2.5"]
         return {
             "object": "list",
             "data": [
