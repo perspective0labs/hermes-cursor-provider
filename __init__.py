@@ -65,6 +65,21 @@ PLUGIN_DIR = Path(__file__).resolve().parent
 DEFAULT_PORT = int(os.getenv("CURSOR_PROXY_PORT", "8765"))
 LOCK_PATH = PLUGIN_DIR / ".proxy_start.lock"
 
+# Both urllib (catalog fetch) and httpx (chat completions) ignore CIDR
+# entries in NO_PROXY (e.g. "127.0.0.0/8"), so a request to the localhost
+# proxy gets routed through the system HTTP proxy (HTTP_PROXY) and fails
+# with 503. Localhost must always be direct -- ensure explicit 127.0.0.1 /
+# ::1 entries exist in NO_PROXY. Both casings are updated because
+# getproxies() lowercases env keys and the last one in iteration wins.
+_NO_PROXY_LOCAL = ("127.0.0.1", "::1")
+for _np_key in ("NO_PROXY", "no_proxy"):
+    _np_parts = [p.strip() for p in os.environ.get(_np_key, "").split(",") if p.strip()]
+    if not all(x in _np_parts for x in _NO_PROXY_LOCAL):
+        os.environ[_np_key] = ",".join(
+            _np_parts + [x for x in _NO_PROXY_LOCAL if x not in _np_parts]
+        )
+del _np_key, _np_parts, _NO_PROXY_LOCAL
+
 _proxy_process: subprocess.Popen | None = None
 
 
@@ -151,7 +166,7 @@ class CursorProfile(ProviderProfile):
         *,
         api_key: str | None = None,
         base_url: str | None = None,
-        timeout: float = 8.0,
+        timeout: float = 30.0,
     ) -> list[str] | None:
         _ensure_proxy_running(DEFAULT_PORT)
         return super().fetch_models(api_key=api_key, base_url=base_url, timeout=timeout)
