@@ -26,6 +26,19 @@ source ~/hermes-agent/venv/bin/activate   # adjust to your install
 pip install h2 protobuf
 ```
 
+> **Bundled-runtime Hermes builds:** newer Hermes releases run the gateway
+> on an isolated bundled interpreter (e.g.
+> `~/.hermes/tools/python-3.14.x/bin/python3`) rather than the venv above.
+> The proxy is spawned with that same interpreter, so packages installed
+> into the venv are not visible to it. Since this release the plugin checks
+> the proxy's interpreter for `h2`/`protobuf` before starting the proxy and
+> `pip install`s anything missing into it (set
+> `CURSOR_PROXY_NO_AUTO_INSTALL=1` to only log instead). Symptom when this
+> is missing: `/v1/models` works but every chat turn fails with
+> *"The 'h2' package is required for the Cursor streaming transport"*.
+> Manual fix: `<that python> -m pip install h2 protobuf`, then retry (no
+> restart needed; `h2` is imported per turn).
+
 Verify Hermes picked it up:
 
 ```bash
