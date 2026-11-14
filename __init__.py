@@ -91,6 +91,58 @@ def _port_open(host: str, port: int, timeout: float = 0.3) -> bool:
         return False
 
 
+# Runtime deps the proxy needs that Hermes itself does not ship.
+# module name -> pip requirement
+_PROXY_RUNTIME_DEPS = {"h2": "h2>=4.4.1", "google.protobuf": "protobuf"}
+
+
+def _ensure_proxy_runtime_deps(python_exe: str) -> None:
+    """Make sure the interpreter that will run the proxy can import h2/protobuf.
+
+    The proxy is spawned with ``sys.executable``. Newer Hermes builds run the
+    gateway on a bundled, isolated interpreter (e.g.
+    ``~/.hermes/tools/python-3.14.x/bin/python3``) instead of the old venv, so
+    deps installed into the venv per the README are invisible to the proxy.
+    The proxy still starts and serves /v1/models, then every chat turn fails
+    with "The 'h2' package is required for the Cursor streaming transport".
+
+    Install whatever is missing into that interpreter once, before spawning.
+    Set ``CURSOR_PROXY_NO_AUTO_INSTALL=1`` to disable and only log.
+    """
+    probe = "import importlib.util as u, sys; " \
+        f"mods = {list(_PROXY_RUNTIME_DEPS)!r}; " \
+        "missing = [m for m in mods if u.find_spec(m.split('.')[0]) is None or (m != m.split('.')[0] and u.find_spec(m) is None)]; " \
+        "print(','.join(missing))"
+    try:
+        out = subprocess.run([python_exe, "-c", probe], capture_output=True, text=True, timeout=30)
+        missing = [m for m in out.stdout.strip().split(",") if m]
+    except Exception as exc:  # pragma: no cover - best effort
+        logger.warning("Cursor proxy: could not probe runtime deps in %s: %s", python_exe, exc)
+        return
+    if not missing:
+        return
+    reqs = [_PROXY_RUNTIME_DEPS[m] for m in missing]
+    if os.getenv("CURSOR_PROXY_NO_AUTO_INSTALL", "").strip() in ("1", "true", "yes"):
+        logger.warning(
+            "Cursor proxy: %s missing from %s (auto-install disabled). Run: %s -m pip install %s",
+            ", ".join(missing), python_exe, python_exe, " ".join(reqs),
+        )
+        return
+    logger.warning("Cursor proxy: installing missing deps %s into %s", reqs, python_exe)
+    try:
+        res = subprocess.run(
+            [python_exe, "-m", "pip", "install", "--quiet", "--disable-pip-version-check", *reqs],
+            capture_output=True, text=True, timeout=300,
+        )
+        if res.returncode != 0:
+            logger.warning(
+                "Cursor proxy: pip install %s failed (rc=%s): %s",
+                reqs, res.returncode, (res.stderr or res.stdout).strip()[-500:],
+            )
+    except Exception as exc:  # pragma: no cover - best effort
+        logger.warning("Cursor proxy: pip install %s failed: %s", reqs, exc)
+
+
 def _ensure_proxy_running(port: int = DEFAULT_PORT) -> None:
     """Start the local proxy server as a background subprocess if not already up.
 
@@ -118,6 +170,7 @@ def _ensure_proxy_running(port: int = DEFAULT_PORT) -> None:
             return
 
         python_exe = sys.executable
+        _ensure_proxy_runtime_deps(python_exe)
         log_path = PLUGIN_DIR / "proxy_server.log"
         try:
             log_file = open(log_path, "a")

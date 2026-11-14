@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import ssl
+import sys
 import threading
 import time
 import uuid
@@ -710,7 +711,7 @@ def run_cursor_agent_turn(
     except ImportError as exc:  # pragma: no cover - depends on optional extra
         raise ImportError(
             "The 'h2' package is required for the Cursor streaming transport. "
-            "Install it with: pip install -e '.[cursor]'"
+            f"Install it into the interpreter running the proxy: {sys.executable} -m pip install h2"
         ) from exc
 
     host = parsed_url.hostname or "api2.cursor.sh"
